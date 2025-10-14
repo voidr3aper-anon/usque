@@ -129,8 +129,8 @@ func (*Config) GetEcEndpointPublicKey() (*ecdsa.PublicKey, error) {
 //   - plain IP: "1.2.3.4" or "2606:..."
 //   - IP with port: "1.2.3.4:443"
 //   - bracketed IPv6 with port: "[2606:...]:443"
-//   - bracketed IPv6 without port: "[2606:...]"
-//
+//   - bracketed IPv6 without port: "[2606:...]" which this goes through default port 443  to connect
+// 
 // Returns an error when no valid IP can be parsed.
 func ParseIPFromEndpoint(endpoint string) (net.IP, error) {
 	// Try direct parse first (covers plain IPv4 and IPv6)
