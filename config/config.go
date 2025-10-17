@@ -138,24 +138,26 @@ func ParseIPFromEndpoint(endpoint string) (net.IP, error) {
 		return ip, nil
 	}
 
-	// Try SplitHostPort which handles "[ipv6]:port" and "ipv4:port"
 	host := endpoint
+	// Try SplitHostPort which handles "[ipv6]:port" and "ipv4:port"
 	if strings.Contains(endpoint, ":") {
-		if h, _, err := net.SplitHostPort(endpoint); err == nil {
+		h, _, err := net.SplitHostPort(endpoint)
+		if err == nil {
 			host = h
+		} else if addrErr, ok := err.(*net.AddrError); ok && strings.Contains(addrErr.Err, "missing port") {
 		} else {
-			// If SplitHostPort failed, try trimming brackets (in case it's "[ip]" or similar)
-			host = strings.Trim(endpoint, "[]")
+			host = endpoint
 		}
 	}
 
 	host = strings.TrimPrefix(host, "[")
 	host = strings.TrimSuffix(host, "]")
+
 	if ip := net.ParseIP(host); ip != nil {
 		return ip, nil
 	}
 
-	return nil, fmt.Errorf("failed to parse IP from endpoint: %s", endpoint)
+	return nil, fmt.Errorf("failed to parse IP from endpoint %q: not a valid IPv4/IPv6 literal", endpoint)
 }
 
 // GetConnectPort returns the port to use for MASQUE connection.
