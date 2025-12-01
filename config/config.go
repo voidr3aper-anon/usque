@@ -7,7 +7,10 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
+	"net"
 	"os"
+	"strconv"
+	"strings"
 )
 
 // Config represents the application configuration structure, containing essential details such as keys, endpoints, and access tokens.
@@ -15,6 +18,8 @@ type Config struct {
 	PrivateKey     string `json:"private_key"`      // Base64-encoded ECDSA private key
 	EndpointV4     string `json:"endpoint_v4"`      // IPv4 address of the endpoint
 	EndpointV6     string `json:"endpoint_v6"`      // IPv6 address of the endpoint
+	EndpointV4Port string `json:"endpoint_v4_port"` // Optional port for IPv4 endpoint
+	EndpointV6Port string `json:"endpoint_v6_port"` // Optional port for IPv6 endpoint
 	EndpointPubKey string `json:"endpoint_pub_key"` // PEM-encoded ECDSA public key of the endpoint to verify against
 	License        string `json:"license"`          // Application license key
 	ID             string `json:"id"`               // Device unique identifier
@@ -117,4 +122,69 @@ func (*Config) GetEcEndpointPublicKey() (*ecdsa.PublicKey, error) {
 	}
 
 	return ecPubKey, nil
+}
+
+// ParseIPFromEndpoint attempts to extract a plain IP from a configuration endpoint string.
+// It accepts the following common formats and returns a net.IP when successful:
+//   - plain IP: "1.2.3.4" or "2606:..."
+//   - IP with port: "1.2.3.4:443"
+//   - bracketed IPv6 with port: "[2606:...]:443"
+//   - bracketed IPv6 without port: "[2606:...]" which this goes through default port 443  to connect
+// 
+// Returns an error when no valid IP can be parsed.
+func ParseIPFromEndpoint(endpoint string) (net.IP, error) {
+	// Try direct parse first (covers plain IPv4 and IPv6)
+	if ip := net.ParseIP(endpoint); ip != nil {
+		return ip, nil
+	}
+
+	host := endpoint
+	// Try SplitHostPort which handles "[ipv6]:port" and "ipv4:port"
+	if strings.Contains(endpoint, ":") {
+		h, _, err := net.SplitHostPort(endpoint)
+		if err == nil {
+			host = h
+		} else if addrErr, ok := err.(*net.AddrError); ok && strings.Contains(addrErr.Err, "missing port") {
+		} else {
+			host = endpoint
+		}
+	}
+
+	host = strings.TrimPrefix(host, "[")
+	host = strings.TrimSuffix(host, "]")
+
+	if ip := net.ParseIP(host); ip != nil {
+		return ip, nil
+	}
+
+	return nil, fmt.Errorf("failed to parse IP from endpoint %q: not a valid IPv4/IPv6 literal", endpoint)
+}
+
+// GetConnectPort returns the port to use for MASQUE connection.
+// Priority:
+// 1. CLI provided port (if cliChanged is true)
+// 2. Config endpoint_v6_port or endpoint_v4_port depending on useIPv6
+// 3. cliPort (fallback)
+func GetConnectPort(useIPv6 bool, cliPort int, cliChanged bool) (int, error) {
+	if cliChanged {
+		return cliPort, nil
+	}
+	if useIPv6 {
+		if AppConfig.EndpointV6Port != "" {
+			p, err := strconv.Atoi(AppConfig.EndpointV6Port)
+			if err != nil {
+				return 0, fmt.Errorf("invalid endpoint_v6_port: %v", err)
+			}
+			return p, nil
+		}
+	} else {
+		if AppConfig.EndpointV4Port != "" {
+			p, err := strconv.Atoi(AppConfig.EndpointV4Port)
+			if err != nil {
+				return 0, fmt.Errorf("invalid endpoint_v4_port: %v", err)
+			}
+			return p, nil
+		}
+	}
+	return cliPort, nil
 }

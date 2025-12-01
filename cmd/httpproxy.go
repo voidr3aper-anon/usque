@@ -84,19 +84,35 @@ var httpProxyCmd = &cobra.Command{
 			cmd.Printf("Failed to get connect port: %v\n", err)
 			return
 		}
+		connectPortChanged := cmd.Flags().Changed("connect-port")
 
 		var endpoint *net.UDPAddr
+		var ip net.IP
 		if ipv6, err := cmd.Flags().GetBool("ipv6"); err == nil && !ipv6 {
-			endpoint = &net.UDPAddr{
-				IP:   net.ParseIP(config.AppConfig.EndpointV4),
-				Port: connectPort,
+			ip, err = config.ParseIPFromEndpoint(config.AppConfig.EndpointV4)
+			if err != nil {
+				ip, err = config.ParseIPFromEndpoint(config.AppConfig.EndpointV6)
+				if err != nil {
+					cmd.Printf("Failed to parse endpoint IPv4 and fallback IPv6: %v\n", err)
+					return
+				}
 			}
 		} else {
-			endpoint = &net.UDPAddr{
-				IP:   net.ParseIP(config.AppConfig.EndpointV6),
-				Port: connectPort,
+			ip, err = config.ParseIPFromEndpoint(config.AppConfig.EndpointV6)
+			if err != nil {
+				ip, err = config.ParseIPFromEndpoint(config.AppConfig.EndpointV4)
+				if err != nil {
+					cmd.Printf("Failed to parse endpoint IPv6 and fallback IPv4: %v\n", err)
+					return
+				}
 			}
 		}
+		finalPort, err := config.GetConnectPort(true, connectPort, connectPortChanged)
+		if err != nil {
+			cmd.Printf("Failed to determine connect port: %v\n", err)
+			return
+		}
+		endpoint = &net.UDPAddr{IP: ip, Port: finalPort}
 
 		tunnelIPv4, err := cmd.Flags().GetBool("no-tunnel-ipv4")
 		if err != nil {

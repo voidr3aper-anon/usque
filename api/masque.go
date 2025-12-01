@@ -3,10 +3,13 @@ package api
 import (
 	"context"
 	"crypto/ecdsa"
+	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"log"
 	"net"
 	"net/http"
 
@@ -59,9 +62,18 @@ func PrepareTlsConfig(privKey *ecdsa.PrivateKey, peerPubKey *ecdsa.PublicKey, ce
 			}
 
 			if !cert.PublicKey.(*ecdsa.PublicKey).Equal(peerPubKey) {
+				// Log fingerprints of presented and expected public keys to help debugging
+				var presentedFp, expectedFp string
+				if b, err := x509.MarshalPKIXPublicKey(cert.PublicKey); err == nil {
+					sum := sha256.Sum256(b)
+					presentedFp = hex.EncodeToString(sum[:])
+				}
+				if b2, err := x509.MarshalPKIXPublicKey(peerPubKey); err == nil {
+					sum := sha256.Sum256(b2)
+					expectedFp = hex.EncodeToString(sum[:])
+				}
+				log.Printf("TLS public key pinning mismatch: presented=%s expected=%s", presentedFp, expectedFp)
 				// reason is incorrect, but the best I could figure
-				// detail explains the actual reason
-
 				//10 is NoValidChains, but we support go1.22 where it's not defined
 				return x509.CertificateInvalidError{Cert: cert, Reason: 10, Detail: "remote endpoint has a different public key than what we trust in config.json"}
 			}
